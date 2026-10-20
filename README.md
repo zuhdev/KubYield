@@ -101,7 +101,11 @@ forge verify-contract <ADDRESS> src/KubYieldVault.sol:KubYieldVault `
 
 ## Grant milestones
 
-- Testnet vaults deployed and verified
-- Staked LP TVL and depositor count
-- Harvests executed and compounded value
-- Mainnet launch with Diamond Finance liquidity
+1. Mainnet launch with Diamond Finance vaults, verified contracts, and DEX
+   listings; 150+ UAW and $25,000 TVL in the first four weeks
+2. Strategies for Kublerx and Ponder plus KUB Wallet / Bitkub NEXT deposits;
+   500+ cumulative UAW and $100,000 TVL
+3. Independent audit, strategy migration tooling, and zapper deposits;
+   1,500+ cumulative UAW and $250,000 TVL
+4. Referral and partner program plus institutional onboarding;
+   3,000+ cumulative UAW and $500,000 TVL
