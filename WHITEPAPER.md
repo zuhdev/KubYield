@@ -13,8 +13,11 @@ restaked. The caller of `harvest` receives 5% of the realized gain. The vault
 uses ERC-4626-style share accounting with a virtual-share offset and a pluggable
 strategy interface.
 
-The first target is Diamond Finance, the largest DEX on KUB Chain. Additional
-DEXs can be supported by implementing the same strategy interface.
+The first target is Diamond Finance, the largest DEX on KUB Chain. The initial
+strategy stakes KUSDT/LUMI Diamon LP in the live `Tomato-LKUSDT V2` SmartChefV2
+farm, claims TOMATO rewards, swaps them into both LP tokens, adds liquidity, and
+restakes. Additional DEXs and farms can be supported by implementing the same
+strategy interface.
 
 ## 2. Problem
 
@@ -53,14 +56,16 @@ Harvesting is profitable for any caller when the gain exceeds gas cost.
 | `KubYieldVault` | Deposits, withdrawals, share pricing, yield accounting, strategy management |
 | `KubYieldShares` | KAP-20 receipt token; minting and burning restricted to the vault |
 | `IStrategy` | Interface for deploying capital and realizing rewards |
-| Diamond strategy (planned) | Claims Diamond rewards, swaps to the LP asset, restakes |
+| `SmartChefLpStrategy` | Stakes Diamon LP, claims TOMATO, swaps to both LP tokens, adds liquidity, restakes |
 
 Asset flow:
 
 - Deposit: `user -> vault` (LP tokens), `vault -> user` (shares).
-- Invest: `vault -> strategy` (LP tokens).
-- Harvest: strategy realizes rewards, value accrues to the vault's assets.
-- Withdraw: `vault -> user` (LP tokens), user shares are burned.
+- Invest: `vault -> strategy -> SmartChefV2 farm` (LP tokens).
+- Harvest: `farm -> strategy` (TOMATO), `strategy -> Diamon router` (swaps),
+  `router -> Diamon pair` (liquidity), new LP is restaked in the farm.
+- Withdraw: `farm -> strategy -> vault -> user` (LP tokens), user shares are
+  burned.
 
 The vault holds idle assets and tracks the value held by the strategy through
 `strategy.totalAssets()`. The vault never assumes where assets are held; it only
@@ -131,11 +136,17 @@ interface IStrategy {
 
 Requirements:
 
-- `totalAssets` reports every asset the strategy controls.
-- `invest` is called by the vault after approval; it pulls the specified amount.
-- `divest` returns the specified amount to the vault.
-- `harvest` realizes and restakes rewards. The vault measures the result through
-  `totalAssets`, so the strategy does not need to report rewards.
+- `totalAssets` reports every asset the strategy controls. `SmartChefLpStrategy`
+  counts idle LP plus LP staked in the farm; pending rewards are excluded until
+  they are realized.
+- `invest` is called by the vault after approval; it pulls the specified amount
+  and stakes it in the farm.
+- `divest` returns the specified amount to the vault, withdrawing from the farm
+  when idle LP is insufficient.
+- `harvest` realizes and restakes rewards. `SmartChefLpStrategy` claims TOMATO,
+  swaps it along configured paths into both pair tokens, adds liquidity, and
+  restakes the new LP. It reverts unless `totalAssets` increases and applies an
+  immutable maximum slippage to swaps and liquidity addition.
 
 The strategy is trusted code. The owner can replace it only while the current
 strategy holds zero assets, which prevents migrating away from a strategy that
@@ -163,6 +174,14 @@ Known risks:
   selection is an owner trust assumption.
 - LP tokens carry DEX, impermanent loss, and underlying asset risk. The vault
   does not hedge these.
+- The live DM-LP farms are third-party Moon Village SmartChefV2 contracts, not
+  official Diamon contracts. A farm upgrade, pause, or exploit can block
+  withdrawals of staked LP or reduce rewards.
+- TOMATO reward liquidity is thin. Harvests can revert when the configured
+  slippage bound cannot be met, and large claims can realize a low reward value.
+- The strategy's rebalancing swaps and liquidity addition can lose value to
+  price impact or MEV; the immutable slippage bound limits but does not remove
+  this risk.
 - KAP-20 shares depend on KUB's KYC registry, admin project router, and transfer
   router configuration for transfers and compliance.
 - The owner key can pause deposits and change an empty strategy. It cannot
@@ -171,20 +190,24 @@ Known risks:
 ## 9. Implementation status
 
 - Solidity 0.8.24, `evm_version = "paris"` for KUB Chain compatibility.
-- `KubYieldVault` and `KubYieldShares` implemented.
-- 22 Foundry tests covering deposits, withdrawals, share math, harvest fees,
-  pause behavior, access control, and strategy invest/divest/harvest flows,
-  including fuzzed deposit/withdraw round-trips.
-- Demo and production deployment scripts.
+- `KubYieldVault`, `KubYieldShares`, and `SmartChefLpStrategy` implemented.
+- 38 deterministic Foundry tests covering deposits, withdrawals, share math,
+  harvest fees, pause behavior, access control, strategy invest/divest/harvest
+  flows, farm staking, reward swapping, liquidity rebalancing, and mocked
+  AMM/router/farm behavior, including fuzzed deposit/withdraw round-trips.
+- An opt-in mainnet-fork test deposits 1,000 KUSDT/LUMI LP, advances 1,000
+  blocks, harvests about 2.316 TOMATO, and validates the full compound path for
+  a newly deployed strategy address.
+- Demo, production, and strategy deployment scripts.
 - No testnet or mainnet deployment yet.
 
 ## 10. Roadmap
 
-1. **Diamond Finance strategy and testnet deployment.** Confirm the staking and
-   router ABIs, implement the strategy, deploy and verify the vault on KUB
-   testnet.
+1. **Testnet deployment and live harvest.** Deploy and verify the vault, shares,
+   and strategy on KUB testnet; run a small harvest and monitor reward
+   liquidity.
 2. **Security review and mainnet launch.** External review, deployment for the
-   KKUB/USDT LP pair, and public launch.
+   KUSDT/LUMI Diamon LP pair, and public launch.
 3. **Expansion.** Strategies for additional KUB DEXs, a TVL and yield dashboard,
    and liquidity incentives.
 
@@ -194,7 +217,10 @@ development, and launch costs.
 ## 11. References
 
 - KUB Chain documentation: <https://docs.kubchain.com>
+- KUB mainnet explorer: <https://kubscan.com>
 - KUB testnet explorer: <https://testnet.kubscan.com>
+- Diamon router: <https://kubscan.com/address/0xAb30a29168D792c5e6a54E4bcF1Aec926a3b20FA>
+- SmartChefV2 `Tomato-LKUSDT V2`: <https://kubscan.com/address/0xd6693F73C0eC5EA56A6C25CE37Ad58820485794a>
 - OpenZeppelin Contracts: <https://github.com/OpenZeppelin/openzeppelin-contracts>
 - kub-chain/kub-contracts (vendored, MIT): <https://github.com/kub-chain/kub-contracts>
 - KubYield repository: <https://github.com/zuhdev/KubYield>
