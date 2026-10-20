@@ -3,6 +3,8 @@
 Auto-compounding yield vaults for KUB Chain DEX liquidity providers. Depositors
 receive KAP-20 receipt shares; anyone can harvest, and the caller earns a fee.
 
+Whitepaper: [WHITEPAPER.md](WHITEPAPER.md)
+
 KUB Builder Grant category: **Other Liquidity Growth dApps** (max $30,000).
 
 ## Architecture
